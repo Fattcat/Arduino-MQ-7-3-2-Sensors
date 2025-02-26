@@ -1,5 +1,5 @@
 # Arduino-SmokeSensor
-Arduino-Smoke Sensor
+### Detecting : Gas, LPG, CO, Alcohol, Methane, Propane, Butane ...
 ## Pin connection
 - Oled --> Arduino Nano
   -  VCC --> 5V
