@@ -12,7 +12,7 @@ Arduino-Smoke Sensor
   - GND --> GND
   - A0 --> A1
  
-  - MQ-7 Sensor --> Arduino Nano
+- MQ-7 Sensor --> Arduino Nano
   - VCC --> 5V
   - GND --> GND
   - A0 --> A2
