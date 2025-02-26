@@ -7,7 +7,7 @@ Arduino-Smoke Sensor
   -  SCL --> A5
   -  SDA --> A4
 
- - MQ-3 Sensor --> Arduino Nano
+- MQ-3 Sensor --> Arduino Nano
   - VCC --> 5V
   - GND --> GND
   - A0 --> A1
