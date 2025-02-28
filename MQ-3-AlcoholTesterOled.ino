@@ -26,6 +26,12 @@ float vypocitajPromile(int hodnota) {
   return 0.0;
 }
 
+// Funkcia na prepočet promile na mg/L
+float promileNaMgL(float promile) {
+  // Tento výpočet je veľmi orientačný, 1 promile = 1000 mg/L
+  return promile * 1000.0;
+}
+
 void setup() {
   // Inicializácia displeja
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
@@ -36,10 +42,7 @@ void setup() {
   display.setCursor(0, 0);
   display.setTextSize(1);
   display.setTextColor(WHITE);
-  display.setRotation(false);
-  
-  // Inicializácia sériovej komunikácie
-  Serial.begin(9600);
+  display.setRotation(2);
 
   // Nastavenie pinu pre MQ-3
   pinMode(MQ3, INPUT);
@@ -52,20 +55,24 @@ void loop() {
   // Výpočet predpokladaného promile zo senzora
   float promile = vypocitajPromile(Detekcia);
 
-  // Zobrazenie predpokladaného promile na displeji
+  // Výpočet mg/L zo získaného promile
+  float mgL = promileNaMgL(promile);
+
+  // Zobrazenie predpokladaného promile a mg/L na displeji
   display.clearDisplay();  // Vymazanie displeja pred zobrazením novej hodnoty
-  display.setCursor(0, 0);  // Nastavenie kurzora na začiatok
+  display.setCursor(30, 10);  // Nastavenie kurzora na začiatok
   display.print("Hodnota: ");
   display.println(Detekcia);
+  
+  display.setCursor(25, 23);
   display.print("Promile: ");
   display.println(promile, 2);  // Zobrazenie promile s 2 desatinnými miestami
+  
+  display.setCursor(25, 36);
+  display.print("mg/L: ");
+  display.println(mgL, 2);  // Zobrazenie mg/L s 2 desatinnými miestami
+  
   display.display();  // Aktualizácia displeja
 
-  // Zobrazenie hodnoty v sériovom výstupe
-  Serial.print("Hodnota: ");
-  Serial.println(Detekcia);
-  Serial.print("Predpokladané promile: ");
-  Serial.println(promile, 2);  // Zobrazenie promile na sériovom monitore
-
-  delay(1000);  // Pauza medzi jednotlivými cyklami
+  delay(300);  // Pauza medzi jednotlivými cyklami
 }
