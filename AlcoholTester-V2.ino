@@ -84,11 +84,10 @@ void printAlcoholLevel(int value)
   display.setTextColor(WHITE);
   display.setCursor(10,55);
   
-  if(value<200)
-  {
+  if(value<241) {
       display.println("Triezvy"); // You are sober
   }
-  if (value>=200 && value<280)
+  if (value>=242 && value<280)
   {
       display.println("Jedno pivo");
   }
