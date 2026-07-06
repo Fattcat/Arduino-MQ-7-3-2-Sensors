@@ -10,21 +10,22 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // --- HARDVÉROVÁ KONFIGURÁCIA ---
 #define MQ3_PIN A0
-#define ADC_RESOLUTION 1023.0 // PRE ESP32 ZMEŇ NA 4095.0
-#define VOLTAGE_REF 5.0       // PRE ESP32 ZMEŇ NA 3.3 (Ak máš delič napätia!)
-#define RL 10.0               // Odpor záťažového rezistora v kOhm (na väčšine MQ modulov je 10kOhm, označený ako 103)
-#define WARMUP_TIME_SEC 20    // Skrátené zahrievanie pre rýchlejšie testovanie (štandard je 60-120s)
+#define ADC_RESOLUTION 1023.0 
+#define VOLTAGE_REF 5.0       
+#define RL 10.0               // Väčšina modulov (ako na foto) má záťažový odpor 10kOhm (SMD kód 103)
+#define WARMUP_TIME_SEC 60    // Bezpečný čas na stabilizáciu NTC vrstvy
+#define CLEAN_AIR_RATIO 60.0  // KLÚČOVÝ FAKTOR: Rs/R0 v čistom vzduchu podľa datasheetu
 
 // --- GLOBÁLNE PREMENNÉ ---
-float R0 = 10.0; 
+float R0 = 1.0; 
+float adcBaseline = 0.0;
 bool isReady = false;
 unsigned long startTime;
 
 void setup() {
-  Serial.begin(115200); // Rýchlejšia komunikácia pre sériový monitor
+  Serial.begin(115200); 
   
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-    Serial.println(F("OLED displej nenájdený!"));
     while (true);
   }
   
@@ -39,28 +40,25 @@ void loop() {
   if (!isReady) {
     handleWarmup();
   } else {
-    handleMeasurementFast();
+    handleMeasurementCorrected();
   }
 }
 
-// Rýchle a citlivé čítanie ADC (znížený počet vzoriek pre okamžitú odozvu)
 float getFastADC() {
   long sum = 0;
-  for(int i = 0; i < 5; i++) { // Znížené z 20 na 5 vzoriek
+  for(int i = 0; i < 10; i++) { 
     sum += analogRead(MQ3_PIN);
-    delayMicroseconds(500);    // Nekresťansky rýchle vzorkovanie bez zbytočného delay()
+    delayMicroseconds(500);    
   }
-  return sum / 5.0;
+  return sum / 10.0;
 }
 
-// Výpočet odporu senzora Rs
 float calculateRs(float rawADC) {
   float sensorVoltage = (rawADC / ADC_RESOLUTION) * VOLTAGE_REF;
-  if (sensorVoltage <= 0.05) return 99999.0; // Ochrana pred delením nulou
+  if (sensorVoltage <= 0.1) return 99999.0; 
   return RL * ((VOLTAGE_REF - sensorVoltage) / sensorVoltage);
 }
 
-// Správa zahrievania a automatická kalibrácia
 void handleWarmup() {
   unsigned long elapsedSeconds = (millis() - startTime) / 1000;
   
@@ -68,74 +66,77 @@ void handleWarmup() {
     display.clearDisplay();
     display.setTextSize(1);
     display.setCursor(10, 5);
-    display.print("STABILIZÁCIA SENZORA");
+    display.print("STABILIZÁCIA (FEIT)");
     
-    display.setCursor(45, 22);
+    display.setCursor(50, 22);
     display.setTextSize(2);
     display.print(WARMUP_TIME_SEC - elapsedSeconds);
     
-    // Plynulý progress bar
     int barWidth = map(elapsedSeconds, 0, WARMUP_TIME_SEC, 0, 108);
     display.drawRect(9, 45, 110, 12, WHITE);
     display.fillRect(10, 46, barWidth, 10, WHITE);
     display.display();
   } 
   else {
-    // Okamžitá kalibrácia základnej hladiny čistého vzduchu
-    float adcBaseline = getFastADC();
-    R0 = calculateRs(adcBaseline);
-    if (R0 <= 0.1) R0 = 0.1; 
+    // KALIBRÁCIA: Odmeriame odpor v čistom vzduchu
+    adcBaseline = getFastADC();
+    float Rs_clean = calculateRs(adcBaseline);
+    
+    // Vypočítame R0 pre alkoholový model (Rs v čistom vzduchu vydelíme faktorom 60)
+    R0 = Rs_clean / CLEAN_AIR_RATIO; 
     
     isReady = true;
   }
 }
 
-// Hlavné meranie s okamžitým prekresľovaním displeja
-void handleMeasurementFast() {
+void handleMeasurementCorrected() {
   float rawADC = getFastADC();
   float Rs = calculateRs(rawADC);
+  
+  // Výpočet pomeru voči nakalibrovanému R0
   float ratio = Rs / R0;
   
-  if (ratio <= 0) ratio = 0.01;
-  
-  // Exponenciálny model pre alkohol (štandardná krivka citlivosti)
+  // Korektný prepočet z log-log grafu pre alkohol
   float mgL = 0.44 * pow(ratio, -1.45); 
   
-  // Odfiltrovanie nízkeho šumu prostredia (v čistom vzduchu ukáže striktne 0.00)
-  if (mgL < 0.04) mgL = 0.0;
+  // SOFTVÉROVÁ NULA: Ak je surové ADC blízko alebo pod kalibračnou hodnotou, je to čistý vzduch
+  if (rawADC <= (adcBaseline + 10)) {
+    mgL = 0.0;
+  }
   
-  // Prepočet na promile (BAC)
   float promile = mgL * 2.1;
 
-  // Debugging do PC cez sériovú linku - uvidíš ako rýchlo to lieta
+  // Debug výpis do PC
   Serial.print("ADC: "); Serial.print(rawADC, 0);
+  Serial.print(" | Baseline: "); Serial.print(adcBaseline, 0);
   Serial.print(" | Ratio: "); Serial.print(ratio, 2);
   Serial.print(" | Promile: "); Serial.println(promile, 2);
 
-  // OKAMŽITÉ VYSTAVENIE NA DISPLEJ
+  // Vykreslenie na OLED
   display.clearDisplay();
   
-  // 1. Riadok: Surová hodnota z ADC (pre tvoju vizuálnu kontrolu)
   display.setTextSize(1);
   display.setCursor(0, 0);
   display.print("Surove ADC: ");
   display.print(rawADC, 0);
   
-  // 2. Riadok: Veľké promile
   display.setCursor(0, 18);
   display.setTextSize(3);
-  display.print(promile, 2);
-  display.setTextSize(1);
-  display.print(" promile");
+  if (promile > 5.0) display.print("MAX"); // Ochrana rozsahu
+  else display.print(promile, 2);
   
-  // 3. Riadok: Hodnota v mg/L
+  display.setTextSize(1);
+  display.print(" ‰");
+  
   display.setCursor(0, 45);
-  display.setTextSize(1);
-  display.print("Dych (mg/L): ");
+  display.print("Dych: ");
   display.print(mgL, 2);
+  display.print(" mg/L");
   
-  // Grafický indikátor okamžitej reakcie (rýchly pás na spodku displeja)
-  int liveBar = map((int)rawADC, 0, (int)ADC_RESOLUTION, 0, 128);
+  // Status Bar kopíruje reálny rozsah od baseline (nula) po plné nasýtenie (ADC 900)
+  int liveBar = map((int)rawADC, (int)adcBaseline, 900, 0, 128);
+  if(liveBar < 0) liveBar = 0;
+  if(liveBar > 128) liveBar = 128;
   display.fillRect(0, 58, liveBar, 6, WHITE);
 
   display.display();
